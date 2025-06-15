@@ -49,8 +49,8 @@ genomic_valid_predict_roc <- genomic_valid %>%
 handtill_auc <- roc_auc(
   genomic_valid_predict_roc,
   truth <- Consensus_Cluster,
-  !!!syms(levels(genomic_valid$Consensus_Cluster)),  # 动态传递所有类别概率列
-  estimator <- "hand_till"  # 关键！指定多分类方法
+  !!!syms(levels(genomic_valid$Consensus_Cluster)),
+  estimator <- "hand_till"
 )
 handtill_auc <- as.matrix(t(handtill_auc))
 
