@@ -1,15 +1,7 @@
+rm(list = ls())
+library("openxlsx")
 
-sample_info <- read.xlsx("RAIT_label20231018.xlsx")
-del_protein_list <- read.xlsx("建议删除的血液蛋白.xlsx",startRow = 1,colNames = F)
-
-protein_matrix <- read.csv("RAIT_Protein_matrix_with_missing_ratio_0.8_normalized_20231018.csv",check.names = F)
-# 8327  115
-protein_matrix <- protein_matrix[!as.character(protein_matrix$Protein)%in%del_protein_list$X1,]
-# 8250  115
-rownames(protein_matrix) <- paste0(protein_matrix$Accession,"_",protein_matrix$Protein)
-protein_matrix <- protein_matrix[,-c(grep("Accession",colnames(protein_matrix)),grep("Protein",colnames(protein_matrix)))]
-
-
+protein_matrix <- read.xlsx("Protein_matrix.xlsx",sheet = 1, rowNames = T, colNames = T)
 
 protein_matrix2 <- protein_matrix
 protein_matrix2$cv <- apply(protein_matrix2,1,function(x) {sd(x,na.rm = T)/mean(x,na.rm =T)})
@@ -22,12 +14,10 @@ protein_matrix3$cv <- apply(protein_matrix3,1,function(x) {sd(x,na.rm = T)/mean(
 ###### ConsensusClusterPlus ########
 library(ConsensusClusterPlus)
 
-# Consensus_data <- as.matrix(protein_matrix)[rownames(protein_matrix3[protein_matrix3$cv>0.5,]),]
-
 Consensus_data <- 2^as.matrix(protein_matrix)[rownames(protein_matrix3[protein_matrix3$cv>0.5,]),]
 
 maxK <- 5
-reps <- 10
+reps <- 500
 pItem <- 0.8
 pFeature <- 1
 clusterAlg <- "kmdist" # 'hc', 'pam', 'km', 'kmdist'
@@ -37,13 +27,9 @@ finalLinkage <- "average"
 corUse <- "everything" # 'everything','pairwise.complete.obs', 'complete.obs' 
 
 
-# clustermethod <- c('hc', 'pam', 'km', 'kmdist')
-# distancemethod <- c('pearson', 'spearman', 'euclidean', 'binary', 'maximum', 'canberra', 'minkowski')
-
 clustermethod <- 'kmdist'
 distancemethod <- 'pearson'
 
-####### 原始值的结果 CV >0.5
 for (tmp.cluster.method in clustermethod) {
   
   for (tmp.distan.method in distancemethod) {
@@ -71,22 +57,18 @@ for (tmp.cluster.method in clustermethod) {
       
       
       subclass2 <- as.data.frame(temp_result1[[2]]$consensusClass)
-      subclass2$是否摄碘 <- sample_info$是否摄碘1摄碘2碘抵抗[match(rownames(subclass2),sample_info$FUSCC)]
       colnames(subclass2)[1] <- "cluster"
       print("2 cluster")
-      print(table(subclass2$cluster,subclass2$是否摄碘))
       
-      write.csv(table(subclass2$cluster,subclass2$是否摄碘),paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","2cluster_result_table_data.csv"))
+      write.csv(table(subclass2$cluster),paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","2cluster_result_table_data.csv"))
       
       write.csv(subclass2,paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","2cluster_result_data.csv"))
       
       subclass3 <- as.data.frame(temp_result1[[3]]$consensusClass)
-      subclass3$是否摄碘 <- sample_info$是否摄碘1摄碘2碘抵抗[match(rownames(subclass3),sample_info$FUSCC)]
       colnames(subclass3)[1] <- "cluster"
       print("3 cluster")
-      print(table(subclass3$cluster,subclass3$是否摄碘))
       
-      write.csv(table(subclass3$cluster,subclass3$是否摄碘),paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","3cluster_result_table_data.csv"))
+      write.csv(table(subclass3$cluster),paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","3cluster_result_table_data.csv"))
       
       write.csv(subclass3,paste0(c(paste0("maxK-",maxK,"_reps-",reps,"_pItem-",pItem,"_clusterAlg-",tmp.cluster.method,"_distance-",tmp.distan.method,"_corUse-",corUse)),"/","3cluster_result_data.csv"))
       
@@ -95,3 +77,85 @@ for (tmp.cluster.method in clustermethod) {
   }
   
 }
+
+
+save(temp_result1,file = "maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/ConsensusClusterPlus_Result.Rdata")
+
+consensus_k2 <- temp_result1[[2]] 
+consensus_k3 <- temp_result1[[3]]  # list index corresponds to k
+consensus_k4 <- temp_result1[[4]]
+consensus_k5 <- temp_result1[[5]]
+
+
+BiocManager::install('M3C')
+library(M3C)
+library(cluster)
+library(dplyr)
+library(tidyr)
+library(factoextra)
+
+
+
+calc_pac <- function(consensus_matrix, lower = 0.1, upper = 0.9) {
+  cm_vals <- consensus_matrix[upper.tri(consensus_matrix)]
+  mean(cm_vals > lower & cm_vals < upper)
+}
+
+pac_k2 <- calc_pac(consensus_k2$consensusMatrix)
+pac_k3 <- calc_pac(consensus_k3$consensusMatrix)
+pac_k4 <- calc_pac(consensus_k4$consensusMatrix)
+pac_k5 <- calc_pac(consensus_k5$consensusMatrix)
+
+pac_df <- data.frame(
+  K = c(2,3, 4,5),
+  PAC = c(pac_k2,pac_k3,pac_k4, pac_k5)
+)
+pac_df
+openxlsx::write.xlsx(pac_df,"maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/PAC_Value.xlsx")
+
+
+library(M3C)
+m3c_res <- M3C::M3C(Consensus_data,
+                    iters = 200,
+                    maxK = 5,
+                    clusteralg = "km",
+                    distance = "euclidean",
+                    seed = 123)
+
+save(m3c_res,file = "maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/M3C_Result.Rdata")
+
+
+library(dplyr)
+m3c_summary <- M3C::M3CResults(m3c_res) %>%
+  filter(K %in% c(3, 4))
+m3c_summary
+
+
+openxlsx::write.xlsx(m3c_res$scores,"maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/M3C_Value.xlsx")
+
+
+
+# 3. GAP Statistic
+
+library(cluster)
+library(factoextra) 
+
+gap_res <- cluster::clusGap(t(Consensus_data),  
+                            FUN = stats::kmeans,
+                            K.max = 5,
+                            B = 500,
+                            nstart = 25,
+                            iter.max = 100)
+
+gap_table <- as.data.frame(gap_res$Tab)
+gap_table$k <- 1:5
+subset(gap_table, k %in% c(3, 4))
+
+openxlsx::write.xlsx(gap_table,"maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/GAP_Value.xlsx")
+
+p1 <- factoextra::fviz_gap_stat(gap_res)
+ggsave(filename = "maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/GAP_Value_plot.pdf" ,plot = p1,width = 4,height = 3)
+
+save(gap_res,file = "maxK-5_reps-500_pItem-0.8_clusterAlg-kmdist_distance-pearson_corUse-everything/GAP_Result.Rdata")
+
+
